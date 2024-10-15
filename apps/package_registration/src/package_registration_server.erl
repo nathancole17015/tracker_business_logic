@@ -27,7 +27,7 @@ handle_call({register, PackageId, Sender, Receiver}, _From, State) ->
     %% Simulate storing package info in Riak (a map in this case)
     io:format("Registering package ~p from ~p to ~p~n", [PackageId, Sender, Receiver]),
     NewState = State#{PackageId => {Sender, Receiver}},
-    {reply, {ok, PackageId}, NewState}.
+    {reply, {ok, PackageId}, NewState};
 
 handle_call(_Request, _From, State) ->
     {reply, error, State}.
