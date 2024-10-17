@@ -1,9 +1,9 @@
 %%%-------------------------------------------------------------------
-%% @doc notification_service top level supervisor.
+%% @doc package_registration top level supervisor.
 %% @end
 %%%-------------------------------------------------------------------
 
--module(notification_service_sup).
+-module(package_registration_sup).
 
 -behaviour(supervisor).
 
