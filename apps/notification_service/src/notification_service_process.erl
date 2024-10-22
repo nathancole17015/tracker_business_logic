@@ -1,9 +1,10 @@
--module(notification_service).
+-module(notification_service_process).
 -behaviour(gen_server).
 
 %% API
 -export([start_link/0, notify/2]).
--export([init/1, handle_cast/2, terminate/2]).
+-export([init/1, callback_mode/0, handle_cast/2, terminate/2]).
+-export([handle_call/3]).
 
 %% Starts the notification service
 start_link() ->
@@ -16,6 +17,7 @@ notify(PackageId, {Status, Location}) ->
 %% gen_server Callbacks
 callback_mode() ->
     handle_event_function.
+
 %% Initialization of the service
 init([]) ->
     io:format("Notification Service started~n"),
@@ -31,6 +33,11 @@ handle_cast({notify, PackageId, Status, Location}, State) ->
     %% httpc:request(post, {"http://example.com/notify", [], "application/json", JsonPayload}, [], []),
 
     {noreply, State}.
+
+%% Placeholder for handle_call/3 since we're not using synchronous calls in this module
+handle_call(_Request, _From, State) ->
+    {reply, error, State}.
+
 
 %% Termination
 terminate(_Reason, _State) ->
