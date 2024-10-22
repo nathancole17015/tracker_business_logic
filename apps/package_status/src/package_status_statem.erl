@@ -2,52 +2,62 @@
 -behaviour(gen_statem).
 
 %% API
--export([start_link/0, update_status/2, get_status/1]).
+-export([start_link/1, update_status/2, get_status/1, update_location/2]).
 
 %% gen_statem callbacks
--export([init/1, handle_event/4, terminate/3, code_change/4]).
+-export([init/1, callback_mode/0, handle_event/4, terminate/3, code_change/4]).
 
-%% Public API
-start_link() ->
-    gen_statem:start_link({local, ?MODULE}, ?MODULE, [], []).
+%% Start the state machine and register it with the package ID
+start_link(PackageId) ->
+    RegisteredName = list_to_atom("package_status_" ++ integer_to_list(PackageId)),
+    gen_statem:start_link({local, RegisteredName}, ?MODULE, [], []).
 
-%% Update status (asynchronous)
+%% API: Asynchronous update of the package status
 update_status(PackageId, Event) ->
-    gen_statem:cast(?MODULE, {update_status, PackageId, Event}).
+    RegisteredName = list_to_atom("package_status_" ++ integer_to_list(PackageId)),
+    gen_statem:cast(RegisteredName, {update_status, Event}).
 
-%% Get status (synchronous)
+%% API: Asynchronous update of the package location
+update_location(PackageId, Location) ->
+    RegisteredName = list_to_atom("package_status_" ++ integer_to_list(PackageId)),
+    gen_statem:cast(RegisteredName, {update_location, Location}).
+
+%% API: Synchronous get the status and location of a package
 get_status(PackageId) ->
-    gen_statem:call(?MODULE, {get_status, PackageId}).
+    RegisteredName = list_to_atom("package_status_" ++ integer_to_list(PackageId)),
+    gen_statem:call(RegisteredName, get_status).
 
-%% gen_statem Callbacks
+%% Callback mode
+callback_mode() ->
+    handle_event_function.
 
-%% Initialization: Start in the 'pending' state
+%% Initialization: Start with an empty map (no initial status or location)
 init([]) ->
-    io:format("Package Status State Machine started. Initial state: pending~n"),
-    {ok, pending, #{}}.
+    io:format("Starting state machine. Initial state: pending~n"),
+    {ok, pending, #{status => "pending", location => "unknown"}}.
 
-%% Handle both casts and calls
-handle_event(cast, {update_status, PackageId, start_delivery}, pending, Data) ->
-    io:format("Package ~p is now in transit.~n", [PackageId]),
-    NewData = Data#{PackageId => "in_transit"},
+%% Handle cast events (update status)
+handle_event(cast, {update_status, start_delivery}, pending, Data) ->
+    io:format("Package is now in transit.~n"),
+    NewData = Data#{status => "in_transit"},
     {next_state, in_transit, NewData};
 
-handle_event(cast, {update_status, PackageId, complete_delivery}, in_transit, Data) ->
-    io:format("Package ~p has been delivered.~n", [PackageId]),
-    NewData = Data#{PackageId => "delivered"},
+handle_event(cast, {update_status, complete_delivery}, in_transit, Data) ->
+    io:format("Package has been delivered.~n"),
+    NewData = Data#{status => "delivered"},
     {next_state, delivered, NewData};
 
-handle_event(cast, {update_status, _PackageId, _Event}, delivered, Data) ->
-    io:format("Package is already delivered, no further updates possible~n"),
-    {keep_state_and_data, Data};
+%% Handle cast events (update location)
+handle_event(cast, {update_location, Location}, _StateName, Data) ->
+    io:format("Package location updated to: ~p~n", [Location]),
+    NewData = Data#{location => Location},
+    {keep_state, NewData};
 
-%% New: Handle synchronous call to get package status
-handle_event(call, {get_status, PackageId}, StateName, Data) ->
-    io:format("Fetching current state for package ~p.~n", [PackageId]),
-    case maps:get(PackageId, Data, undefined) of
-        undefined -> {reply, {error, not_found}, StateName, Data};
-        Status -> {reply, {ok, Status}, StateName, Data}
-    end;
+%% Handle synchronous call to get status and location
+handle_event(call, get_status, _StateName, Data) ->
+    Status = maps:get(status, Data),
+    Location = maps:get(location, Data),
+    {reply, {ok, Status, Location}, _StateName, Data};
 
 %% Fallback for unknown events
 handle_event(_EventType, _EventContent, State, Data) ->
