@@ -32,8 +32,8 @@ callback_mode() ->
     handle_event_function.
 
 %% Initialization: Start with an empty map (no initial status or location)
-init([]) ->
-    io:format("Starting state machine. Initial state: pending~n"),
+init([PackageId]) ->
+    io:format("Starting state machine for package ~p. Initial state: pending~n", [PackageId]),
     {ok, pending, #{status => "pending", location => "unknown"}}.
 
 %% Handle cast events (update status)
