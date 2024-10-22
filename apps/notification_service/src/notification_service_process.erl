@@ -14,7 +14,8 @@ notify(PackageId, {Status, Location}) ->
     gen_server:cast(notification_service, {notify, PackageId, Status, Location}).
 
 %% gen_server Callbacks
-
+callback_mode() ->
+    handle_event_function.
 %% Initialization of the service
 init([]) ->
     io:format("Notification Service started~n"),
