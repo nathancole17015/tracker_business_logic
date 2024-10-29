@@ -2,13 +2,16 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, register_package/3]).
+-export([start_link/0, register_package/3, stop/0]).  % Add stop/0 to exports
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
 -define(RIAK_HOST, "localhost").
 -define(RIAK_PORT, 8087).
+
+%% Define the state record with a field for the Riak connection PID
+-record(state, {riak_pid}).
 
 %% Public API
 start_link() ->
@@ -17,17 +20,36 @@ start_link() ->
 register_package(PackageId, Sender, Receiver) ->
     gen_server:call(?MODULE, {register, PackageId, Sender, Receiver}).
 
+stop() ->
+    gen_server:stop(?MODULE).
+
 %% gen_server Callbacks
 
 init([]) ->
-    %% Initialize state (could be a Riak connection here)
-    {ok, #{}}.
+    %% Connect to Riak when the server starts
+    case riakc_pb_socket:start_link(?RIAK_HOST, ?RIAK_PORT) of
+        {ok, RiakPid} ->
+            {ok, #state{riak_pid = RiakPid}};
+        {error, Reason} ->
+            {stop, Reason}
+    end.
 
-handle_call({register, PackageId, Sender, Receiver}, _From, State) ->
-    %% Simulate storing package info in Riak (a map in this case)
-    io:format("Registering package ~p from ~p to ~p~n", [PackageId, Sender, Receiver]),
-    NewState = State#{PackageId => {Sender, Receiver}},
-    {reply, {ok, PackageId}, NewState};
+handle_call({register, PackageId, Sender, Receiver}, _From, #state{riak_pid = RiakPid} = State) ->
+    %% Create a new object to store in Riak
+    Bucket = <<"package_registration">>,
+    Key = integer_to_binary(PackageId),
+    Value = term_to_binary({Sender, Receiver}),
+    Obj = riakc_obj:new(Bucket, Key, Value),
+
+    %% Store the object in Riak
+    case riakc_pb_socket:put(RiakPid, Obj) of
+        ok ->
+            io:format("Package ~p registered from ~p to ~p~n", [PackageId, Sender, Receiver]),
+            {reply, {ok, PackageId}, State};
+        {error, Reason} ->
+            io:format("Failed to register package: ~p~n", [Reason]),
+            {reply, {error, Reason}, State}
+    end;
 
 handle_call(_Request, _From, State) ->
     {reply, error, State}.
