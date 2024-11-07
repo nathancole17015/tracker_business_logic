@@ -11,9 +11,10 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-%% Public API for sending message
+%% Public API for sending a message to server_a on another node
 send_message(Msg) ->
-    gen_server:cast(server_a, {msg_from_b, Msg}).
+    %% Assuming server_a is running on node `server_a@computer1`
+    gen_server:cast({global, {server_a, 'server_a@computer1'}}, {msg_from_b, Msg}).
 
 init([]) ->
     {ok, #{}}.
