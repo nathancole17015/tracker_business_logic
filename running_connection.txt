@@ -1,0 +1,9 @@
+You'll need to start each node with a custom name and secret cookie:
+rebar3 shell --name server_a@203.0.113.1 --setcookie mysecretcookie
+
+It makes sense to add these to config/vm.args:
+-name server_a@203.0.113.1
+-setcookie mysecretcookie
+
+And test the connection, this should give the responce 'pong':
+net_adm:ping('node_name@ip_address').
