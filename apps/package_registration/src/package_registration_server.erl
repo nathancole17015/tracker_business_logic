@@ -2,7 +2,7 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, register_package/3, get_package/1]).
+-export([start_link/0, register_package/1, get_package/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
@@ -15,8 +15,8 @@
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-register_package(PackageId, Sender, Receiver) ->
-    gen_server:call(?MODULE, {register, PackageId, Sender, Receiver}).
+register_package(PackageId) ->
+    gen_server:call(?MODULE, {register, PackageId}).
 
 get_package(PackageId) ->
     gen_server:call(?MODULE, {get, PackageId}).
@@ -28,15 +28,15 @@ init([]) ->
     inets:start(),
     {ok, #state{}}.
 
-handle_call({register, PackageId, Sender, Receiver}, _From, State) ->
+handle_call({register, PackageId}, _From, State) ->
     %% Define the URL for the specific package
     URL = ?RIAK_URL ++ integer_to_list(PackageId),
     %% Create JSON data to store
-    Data = jsx:encode([{sender, Sender}, {receiver, Receiver}]),
+    Data = jsx:encode(<<"pending">>),
     %% Send HTTP PUT request to store data
     case httpc:request(put, {URL, [{"Content-Type", "application/json"}], "application/json", Data}, [], []) of
         {ok, {{_, 200, _}, _, _}} ->
-            log_info(io_lib:format("Package ~p registered from ~p to ~p", [PackageId, Sender, Receiver])),
+            log_info(io_lib:format("Package ~p registered", [PackageId])),
             {reply, {ok, PackageId}, State};
         {ok, {{_, StatusCode, _}, _, ResponseBody}} ->
             log_info(io_lib:format("Failed to register package, status: ~p, response: ~s~n", [StatusCode, ResponseBody])),
@@ -52,6 +52,7 @@ handle_call({get, PackageId}, _Sender, State) ->
     %% Send HTTP GET request to retrieve data
     case httpc:request(get, {URL, []}, [], []) of
         {ok, {{_, 200, _}, _, Body}} ->
+            % log_info(io_lib:format("Package ~p registered", [PackageId])),
             {reply, {ok, jsx:decode(Body)}, State};
         {ok, {{_, StatusCode, _}, _, _}} ->
             log_info(io_lib:format("Failed to retrieve package, status: ~p~n", [StatusCode])),
@@ -108,9 +109,7 @@ register_package_success_test() ->
 
     %% Call register_package/3 and check for successful response
     PackageId = 123,
-    Sender = <<"sender@example.com">>,
-    Receiver = <<"receiver@example.com">>,
-    Result = package_registration_server:register_package(PackageId, Sender, Receiver),
+    Result = package_registration_server:register_package(PackageId),
     ?assertMatch({ok, PackageId}, Result).
 
 register_package_failure_test() ->
@@ -120,7 +119,7 @@ register_package_failure_test() ->
     end),
 
     %% Attempt to register a package, expecting an error tuple in response
-    Result = package_registration_server:register_package(456, <<"sender">>, <<"receiver">>),
+    Result = package_registration_server:register_package(456),
     ?assertMatch({error, {http_error, 500}}, Result).
 
 get_package_success_test() ->
