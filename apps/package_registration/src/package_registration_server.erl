@@ -2,16 +2,14 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, register_package/3]).
+-export([start_link/0, register_package/3, get_package/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--define(RIAK_HOST, "localhost").
--define(RIAK_PORT, 8087).
+-define(RIAK_URL, "http://database.mertlymedia.net:8098/buckets/test_bucket/keys/").
 
-%% Define the state record with a field for the Riak connection PID
--record(state, {riak_pid}).
+-record(state, {}).
 
 %% Public API
 start_link() ->
@@ -20,35 +18,50 @@ start_link() ->
 register_package(PackageId, Sender, Receiver) ->
     gen_server:call(?MODULE, {register, PackageId, Sender, Receiver}).
 
+get_package(PackageId) ->
+    gen_server:call(?MODULE, {get, PackageId}).
+
 %% gen_server Callbacks
 
 init([]) ->
-    %% Connect to Riak when the server starts
-    case riakc_pb_socket:start_link(?RIAK_HOST, ?RIAK_PORT) of
-        {ok, RiakPid} ->
-            {ok, #state{riak_pid = RiakPid}};
-        {error, Reason} ->
-            {stop, Reason}
-    end.
+    %% Start inets (for httpc)
+    inets:start(),
+    {ok, #state{}}.
 
-handle_call({register, PackageId, Sender, Receiver}, _From, #state{riak_pid = RiakPid} = State) ->
-    %% Create a new object to store in Riak
-    Bucket = <<"package_registration">>,
-    Key = integer_to_binary(PackageId),
-    Value = term_to_binary({Sender, Receiver}),
-    Obj = riakc_obj:new(Bucket, Key, Value),
-
-    %% Store the object in Riak
-    case riakc_pb_socket:put(RiakPid, Obj) of
-        ok ->
-            io:format("Package ~p registered from ~p to ~p~n", [PackageId, Sender, Receiver]),
+handle_call({register, PackageId, Sender, Receiver}, _From, State) ->
+    %% Define the URL for the specific package
+    URL = ?RIAK_URL ++ integer_to_list(PackageId),
+    %% Create JSON data to store
+    Data = jsx:encode([{sender, Sender}, {receiver, Receiver}]),
+    %% Send HTTP PUT request to store data
+    case httpc:request(put, {URL, [{"Content-Type", "application/json"}], "application/json", Data}, [], []) of
+        {ok, {{_, 200, _}, _, _}} ->
+            log_info(io_lib:format("Package ~p registered from ~p to ~p", [PackageId, Sender, Receiver])),
             {reply, {ok, PackageId}, State};
+        {ok, {{_, StatusCode, _}, _, ResponseBody}} ->
+            log_info(io_lib:format("Failed to register package, status: ~p, response: ~s~n", [StatusCode, ResponseBody])),
+            {reply, {error, {http_error, StatusCode}}, State};
         {error, Reason} ->
-            io:format("Failed to register package: ~p~n", [Reason]),
+            log_info(io_lib:format("Failed to register package: ~p~n", [Reason])),
             {reply, {error, Reason}, State}
     end;
 
-handle_call(_Request, _From, State) ->
+handle_call({get, PackageId}, _Sender, State) ->
+    %% Define the URL for the specific package
+    URL = ?RIAK_URL ++ integer_to_list(PackageId),
+    %% Send HTTP GET request to retrieve data
+    case httpc:request(get, {URL, []}, [], []) of
+        {ok, {{_, 200, _}, _, Body}} ->
+            {reply, {ok, jsx:decode(Body)}, State};
+        {ok, {{_, StatusCode, _}, _, _}} ->
+            log_info(io_lib:format("Failed to retrieve package, status: ~p~n", [StatusCode])),
+            {reply, {error, {http_error, StatusCode}}, State};
+        {error, Reason} ->
+            log_info(io_lib:format("Failed to retrieve package: ~p~n", [Reason])),
+            {reply, {error, Reason}, State}
+    end;
+
+handle_call(_Request, _Sender, State) ->
     {reply, error, State}.
 
 handle_cast(_Msg, State) ->
@@ -62,3 +75,74 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+
+-ifndef(TEST).
+log_info(Msg) ->
+    io:format("~s~n",[Msg]).
+-endif.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+log_info(_Msg) ->
+    ok.
+%% Setup and Teardown for tests
+setup() ->
+    meck:new(httpc, [passthrough]),
+    {ok, package_registration_server:start_link()}.
+
+teardown(_) ->
+    meck:unload(httpc).
+
+%% Tests
+start_link_test() ->
+    {ok, Pid} = package_registration_server:start_link(),
+    is_process_alive(Pid).
+
+register_package_success_test() ->
+    %% Mock a successful HTTP PUT request
+    meck:expect(httpc, request, fun(_Method, {_URL, _Headers, _Type, _Data}, _Options, _Opts) ->
+        {ok, {{http, 200, "OK"}, [], "Package registered"}}
+    end),
+
+    %% Call register_package/3 and check for successful response
+    PackageId = 123,
+    Sender = <<"sender@example.com">>,
+    Receiver = <<"receiver@example.com">>,
+    Result = package_registration_server:register_package(PackageId, Sender, Receiver),
+    ?assertMatch({ok, PackageId}, Result).
+
+register_package_failure_test() ->
+    %% Mock an HTTP error response for PUT
+    meck:expect(httpc, request, fun(_Method, {_URL, _Headers, _Type, _Data}, _Options, _Opts) ->
+        {ok, {{http, 500, "Internal Server Error"}, [], "Failure"}}
+    end),
+
+    %% Attempt to register a package, expecting an error tuple in response
+    Result = package_registration_server:register_package(456, <<"sender">>, <<"receiver">>),
+    ?assertMatch({error, {http_error, 500}}, Result).
+
+get_package_success_test() ->
+    %% Mock a successful HTTP GET request
+    meck:expect(httpc, request, fun(get, {_URL, _Headers}, _Options, _Opts) ->
+        {ok, {{http, 200, "OK"}, [], <<"{\"sender\":\"sender@example.com\",\"receiver\":\"receiver@example.com\"}">>}}
+    end),
+
+    %% Test get_package/1 with an expected JSON response
+    PackageId = 123,
+    Result = package_registration_server:get_package(PackageId),
+    ExpectedData = [{<<"sender">>, <<"sender@example.com">>}, {<<"receiver">>, <<"receiver@example.com">>}],
+    ?assertMatch({ok, ExpectedData}, Result).
+
+get_package_failure_test() ->
+    %% Mock a failure for HTTP GET
+    meck:expect(httpc, request, fun(get, {_URL, _Headers}, _Options, _Opts) ->
+        {ok, {{http, 404, "Not Found"}, [], "Not found"}}
+    end),
+
+    %% Attempt to get a non-existing package, expecting an error
+    Result = package_registration_server:get_package(789),
+    ?assertMatch({error, {http_error, 404}}, Result).
+
+-endif.
