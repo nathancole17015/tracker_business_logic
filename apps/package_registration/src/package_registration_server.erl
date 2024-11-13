@@ -30,9 +30,11 @@ init([]) ->
 
 handle_call({register, PackageId}, _From, State) ->
     %% Define the URL for the specific package
-    URL = ?RIAK_URL ++ integer_to_list(PackageId),
+    URL = ?RIAK_URL
+        ++ integer_to_list(PackageId)
+        ++ "?returnbody=true",
     %% Create JSON data to store
-    Data = jsx:encode(<<"pending">>),
+    Data = jsx:encode([{locationId,<<"pending">>}]),
     %% Send HTTP PUT request to store data
     case httpc:request(put, {URL, [{"Content-Type", "application/json"}], "application/json", Data}, [], []) of
         {ok, {{_, 200, _}, _, _}} ->
@@ -52,8 +54,8 @@ handle_call({get, PackageId}, _Sender, State) ->
     %% Send HTTP GET request to retrieve data
     case httpc:request(get, {URL, []}, [], []) of
         {ok, {{_, 200, _}, _, Body}} ->
-            % log_info(io_lib:format("Package ~p registered", [PackageId])),
-            {reply, {ok, jsx:decode(Body)}, State};
+            log_info(io_lib:format("Package ~p registered", [PackageId])),
+            {reply, {ok, jsx:decode(list_to_binary(Body),[return_maps])}, State};
         {ok, {{_, StatusCode, _}, _, _}} ->
             log_info(io_lib:format("Failed to retrieve package, status: ~p~n", [StatusCode])),
             {reply, {error, {http_error, StatusCode}}, State};
@@ -125,14 +127,17 @@ register_package_failure_test() ->
 get_package_success_test() ->
     %% Mock a successful HTTP GET request
     meck:expect(httpc, request, fun(get, {_URL, _Headers}, _Options, _Opts) ->
-        {ok, {{http, 200, "OK"}, [], <<"{\"sender\":\"sender@example.com\",\"receiver\":\"receiver@example.com\"}">>}}
+        {ok, {{http, 200, "OK"}, [], "{\"locationId\":\"pending\"}"}}
     end),
 
     %% Test get_package/1 with an expected JSON response
     PackageId = 123,
     Result = package_registration_server:get_package(PackageId),
-    ExpectedData = [{<<"sender">>, <<"sender@example.com">>}, {<<"receiver">>, <<"receiver@example.com">>}],
+    
+    %% Adjust ExpectedData to use map syntax with binary keys and values
+    ExpectedData = #{<<"locationId">> => <<"pending">>},
     ?assertMatch({ok, ExpectedData}, Result).
+
 
 get_package_failure_test() ->
     %% Mock a failure for HTTP GET
