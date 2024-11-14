@@ -33,10 +33,20 @@ handle_call({register, PackageId}, _From, State) ->
     URL = ?RIAK_URL
         ++ integer_to_list(PackageId)
         ++ "?returnbody=true",
-    %% Create JSON data to store
-    Data = jsx:encode([{locationId,<<"pending">>}]),
-    %% Send HTTP PUT request to store data
-    case httpc:request(put, {URL, [{"Content-Type", "application/json"}], "application/json", Data}, [], []) of
+    Data = jsx:encode([{locationId, <<"pending">>}]),
+    %% Headers for JSON content
+    Headers = [{"Content-Type", "application/json"}],
+    %% SSL Options for httpc
+    SSL_Options = [
+        {ssl, [
+            {verify, verify_peer},
+            {cacertfile, "./priv/ssl/fullchain.pem"},
+            {keyfile, "./priv/ssl/privkey.pem"},
+            {depth, 2}
+        ]}
+    ],
+    %% Send HTTPS PUT request to store data
+    case httpc:request(put, {URL, Headers, "application/json", Data}, [], SSL_Options) of
         {ok, {{_, 200, _}, _, _}} ->
             log_info(io_lib:format("Package ~p registered", [PackageId])),
             {reply, {ok, PackageId}, State};
