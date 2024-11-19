@@ -21,7 +21,6 @@ register_package(PackageId, Sender, Receiver) ->
     gen_server:call(?MODULE, {register, PackageId, Sender, Receiver}).
 
 %% gen_server Callbacks
-
 init([]) ->
     %% Connect to Riak when the server starts
     case riakc_pb_socket:start_link(?RIAK_HOST, ?RIAK_PORT) of
