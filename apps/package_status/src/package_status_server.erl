@@ -100,35 +100,35 @@ log_info(_Msg) ->
 
 %% Tests
 setup() ->
-    {ok, _Pid} = package_status_server:start_link(),
+    meck:new(httpc, [passthrough]),
+    {ok, _} = package_status_server:start_link(), % Ensure server is started
     ok.
 
 teardown(_) ->
     gen_server:stop(package_status_server).
         
 
-update_package_status_test() ->
-    %% Mock a successful HTTP PUT request
-    meck:expect(httpc, request, fun(_Method, {_URL, _Headers, _Type, _Data}, _Options, _Opts) ->
-        {ok, {{http, 200, "OK"}, [], "Status updated"}}
-    end),
-
-    %% Test updating the package status
-    PackageId = 123,
-    Status = <<"shipped">>,
-    Result = package_status_server:update_package_status(PackageId, Status),
-    ?assertMatch({ok, PackageId}, Result).
-
-get_package_test() ->
-    %% Mock a successful HTTP GET request
-    meck:expect(httpc, request, fun(get, {_URL, _Headers}, _Options, _Opts) ->
-        {ok, {{http, 200, "OK"}, [], "{\"status\":\"shipped\"}"}}
-    end),
-
-    %% Test getting the package
-    PackageId = 123,
-    Result = package_status_server:get_package(PackageId),
-    ExpectedData = #{<<"status">> => <<"shipped">>},
-    ?assertMatch({ok, ExpectedData}, Result).
-
+    update_package_status_test() ->
+        %% Mock a successful HTTP PUT request
+        meck:expect(httpc, request, fun(_Method, {_URL, _Headers, _Type, _Data}, _Options, _Opts) -> 
+            {ok, {{http, 200, "OK"}, [], "Status updated"}}
+        end),
+    
+        %% Test updating the package status
+        PackageId = 123,
+        Status = <<"shipped">>,
+        Result = package_status_server:update_package_status(PackageId, Status),
+        ?assertMatch({ok, PackageId}, Result).
+    
+    get_package_test() ->
+        %% Mock a successful HTTP GET request
+        meck:expect(httpc, request, fun(get, {_URL, _Headers}, _Options, _Opts) -> 
+            {ok, {{http, 200, "OK"}, [], "{\"status\":\"shipped\"}"}}
+        end),
+    
+        %% Test getting the package
+        PackageId = 123,
+        Result = package_status_server:get_package(PackageId),
+        ExpectedData = #{<<"status">> => <<"shipped">>},
+        ?assertMatch({ok, ExpectedData}, Result).
 -endif.
