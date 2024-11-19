@@ -10,11 +10,14 @@ start(_StartType, _StartArgs) ->
     Dispatch = cowboy_router:compile([
             {'_', [
                 {"/register", package_registration_handler, []}
-                %{"/", cowboy_static, {priv_file, db_access, "static/index.html"}}        
             ]}
         ]),
-    ParentPrivDir = filename:dirname(filename:dirname(code:priv_dir(package_registration))),
-    %tls stands for transport layer security
+    ParentPrivDir = lists:foldr(
+        fun (_,Dir) -> filename:dirname(Dir) end,
+        code:priv_dir(package_registration),
+        lists:seq(1,5)
+    ),
+
     {ok,_} = cowboy:start_tls(https_listener, [
             {port, 8443},
             {certfile, ParentPrivDir ++ "/priv/ssl/fullchain.pem"},
@@ -25,8 +28,11 @@ start(_StartType, _StartArgs) ->
     %% Start the TLS listener
     package_registration_sup:start_link().
 
-
-
 stop(_State) ->
     ok.
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+prin_test() ->
+    ?assertMatch(fail,fail).
+-endif.

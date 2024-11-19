@@ -7,7 +7,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--define(RIAK_URL, "http://database.mertlymedia.net:8098/buckets/test_bucket/keys/").
+-define(RIAK_URL, "https://database.mertlymedia.net:8098/buckets/test_bucket/keys/").
 
 -record(state, {}).
 
