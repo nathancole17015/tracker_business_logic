@@ -1,8 +1,3 @@
-%%%-------------------------------------------------------------------
-%% @doc package_registration public API
-%% @end
-%%%-------------------------------------------------------------------
-
 -module(package_registration_app).
 
 -behaviour(application).
@@ -10,27 +5,28 @@
 -export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
-    %% Specify the SSL options with the paths to your certificates
-    SSL_Opts = [
-        {certfile, "./priv/ssl/fullchain.pem"},
-        {keyfile, "./priv/ssl/privkey.pem"}
-    ],
+    % {ok, _StartedApps} = application:ensure_all_started(cowboy),
 
-    %% Set up Cowboy with HTTPS on port 8443
-    {ok, _} = cowboy:start_https(
-        my_https_listener,
-        100,  %% Max connections
-        #{port => 8443},
-        #{env => #{dispatch => cowboy_router:compile([
+    Dispatch = cowboy_router:compile([
             {'_', [
                 {"/register", package_registration_handler, []}
+                %{"/", cowboy_static, {priv_file, db_access, "static/index.html"}}        
             ]}
-        ])}},
-        SSL_Opts
-    ),
-    package_registration_server:start_link().
+        ]),
+    ParentPrivDir = filename:dirname(filename:dirname(code:priv_dir(package_registration))),
+    %tls stands for transport layer security
+    {ok,_} = cowboy:start_tls(https_listener, [
+            {port, 8443},
+            {certfile, ParentPrivDir ++ "/priv/ssl/fullchain.pem"},
+            {keyfile, ParentPrivDir ++ "/priv/ssl/privkey.pem"}],
+            #{env => #{dispatch => Dispatch}}
+        ),
+
+    %% Start the TLS listener
+    package_registration_sup:start_link().
+
+
 
 stop(_State) ->
     ok.
 
-%% internal functions
