@@ -100,11 +100,12 @@ log_info(_Msg) ->
 
 %% Tests
 setup() ->
-    meck:new(httpc, [passthrough]),
-    {ok, package_registration_server:start_link()}.
+    {ok, _Pid} = package_status_server:start_link(),
+    ok.
 
 teardown(_) ->
-    meck:unload(httpc).
+    gen_server:stop(package_status_server).
+        
 
 update_package_status_test() ->
     %% Mock a successful HTTP PUT request
@@ -115,7 +116,7 @@ update_package_status_test() ->
     %% Test updating the package status
     PackageId = 123,
     Status = <<"shipped">>,
-    Result = package_registration_server:update_package_status(PackageId, Status),
+    Result = package_status_server:update_package_status(PackageId, Status),
     ?assertMatch({ok, PackageId}, Result).
 
 get_package_test() ->
@@ -126,7 +127,7 @@ get_package_test() ->
 
     %% Test getting the package
     PackageId = 123,
-    Result = package_registration_server:get_package(PackageId),
+    Result = package_status_server:get_package(PackageId),
     ExpectedData = #{<<"status">> => <<"shipped">>},
     ?assertMatch({ok, ExpectedData}, Result).
 
