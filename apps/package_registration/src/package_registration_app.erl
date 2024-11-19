@@ -5,7 +5,7 @@
 -export([start/2, stop/1]).
 
 start(_StartType, _StartArgs) ->
-    % {ok, _StartedApps} = application:ensure_all_started(cowboy),
+    {ok, _StartedApps} = application:ensure_all_started(cowboy),
 
     Dispatch = cowboy_router:compile([
             {'_', [

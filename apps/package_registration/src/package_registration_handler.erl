@@ -14,7 +14,7 @@ init(Req, _Opts) ->
                     %% Respond with a 400 Bad Request if the PackageId is invalid
                     cowboy_req:reply(400, #{<<"content-type">> => <<"text/plain">>}, <<"Invalid Package ID">>, Req1),
                     {ok, Req1, #{}};
-                {ok, PackageId} ->
+                {PackageId,_} ->
                     %% Call package_registration_server:register_package/1
                     Result = package_registration_server:register_package(PackageId),
 
