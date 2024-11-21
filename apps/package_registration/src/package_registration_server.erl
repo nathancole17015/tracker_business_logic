@@ -7,7 +7,7 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--define(RIAK_URL, "https://database.mertlymedia.net:8098/buckets/test_bucket/keys/").
+-define(RIAK_URL, "https://database.mertlymedia.net:443/buckets/test_bucket/keys/").
 
 -record(state, {}).
 
@@ -36,17 +36,8 @@ handle_call({register, PackageId}, _From, State) ->
     Data = jsx:encode([{locationId, <<"pending">>}]),
     %% Headers for JSON content
     Headers = [{"Content-Type", "application/json"}],
-    %% SSL Options for httpc
-    SSL_Options = [
-        {ssl, [
-            {verify, verify_peer},
-            {cacertfile, "./priv/ssl/fullchain.pem"},
-            {keyfile, "./priv/ssl/privkey.pem"},
-            {depth, 2}
-        ]}
-    ],
     %% Send HTTPS PUT request to store data
-    case httpc:request(put, {URL, Headers, "application/json", Data}, [], SSL_Options) of
+    case httpc:request(put, {URL, Headers, "application/json", Data}, []) of
         {ok, {{_, 200, _}, _, _}} ->
             log_info(io_lib:format("Package ~p registered", [PackageId])),
             {reply, {ok, PackageId}, State};
