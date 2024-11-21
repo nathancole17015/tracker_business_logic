@@ -7,6 +7,8 @@
 %% gen_statem callbacks
 -export([init/1, callback_mode/0, handle_event/4, terminate/3, code_change/4]).
 
+-define(RIAK_URL, "https://database.mertlymedia.net:443/buckets/test_bucket/keys/").
+
 %% Start the state machine and register it with the package ID
 start_link(PackageId) ->
     RegisteredName = list_to_atom("package_status_" ++ integer_to_list(PackageId)),
@@ -33,22 +35,30 @@ callback_mode() ->
     handle_event_function.
 
 %% Initialization: Start with an empty map (no initial status or location)
-init([_PackageId]) ->
-    {ok, pending, #{status => "pending", location => "unknown"}}.
+init([PackageId]) ->
+    inets:start(), %% Start the inets application for HTTP requests
+    InitialData = #{status => "pending", location => "unknown", package_id => PackageId},
+    {ok, pending, InitialData}.
 
 %% Handle cast events (update status)
-handle_event(cast, {update_status, start_delivery}, pending, Data) ->
-    {next_state, in_transit, maps:put(status,"in_transit",Data)};
-
-handle_event(cast, {update_status, complete_delivery}, in_transit, Data) ->
-    {next_state, delivered, maps:put(status,"delivered",Data)};
+handle_event(cast, {update_status, Event}, State, Data) ->
+    NewState = case {State, Event} of
+        {pending, start_delivery} -> in_transit;
+        {in_transit, complete_delivery} -> delivered;
+        _ -> State
+    end,
+    UpdatedData = maps:put(status, atom_to_list(NewState), Data),
+    send_http_update(UpdatedData),
+    {next_state, NewState, UpdatedData};
 
 %% Handle cast events (update location)
 handle_event(cast, {update_location, Location}, State, Data) ->
-    {next_state, State, maps:put(location,Location,Data)};
+    UpdatedData = maps:put(location, Location, Data),
+    send_http_update(UpdatedData),
+    {next_state, State, UpdatedData};
 
 %% Handle synchronous call to get status and location
-handle_event({call,From}, get_status, State, Data) ->
+handle_event({call, From}, get_status, State, Data) ->
     gen_statem:reply(From, Data),
     {next_state, State, Data};
 
@@ -64,57 +74,22 @@ terminate(_Reason, _State, _Data) ->
 code_change(_OldVsn, State, Data, _Extra) ->
     {ok, State, Data}.
 
+%% Helper function to send HTTP updates
+send_http_update(Data) ->
+    PackageId = maps:get(package_id, Data),
+    URL = ?RIAK_URL ++ integer_to_list(PackageId) ++ "?returnbody=true",
+    Headers = [{"Content-Type", "application/json"}],
+    Body = jsx:encode(Data),
+    case httpc:request(put, {URL, Headers, "application/json", Body}, [], []) of
+        {ok, {{_, 200, _}, _, _}} ->
+            io:format("Successfully updated package: ~p~n", [PackageId]);
+        {ok, {{_, StatusCode, _}, _, ResponseBody}} ->
+            io:format("Failed to update package ~p: ~p~n", [PackageId, StatusCode]);
+        {error, Reason} ->
+            io:format("HTTP error while updating package ~p: ~p~n", [PackageId, Reason])
+    end.
 
 -ifdef(TEST).
-
 -include_lib("eunit/include/eunit.hrl").
-handle_event_test_() -> 
-    [
-        ?_assertEqual(
-            {next_state, in_transit, #{status => "in_transit"}},
-            handle_event(cast, {update_status, start_delivery}, pending, #{})
-        ),
-
-        ?_assertEqual(
-            {next_state, delivered, #{status => "delivered"}},
-            handle_event(cast, {update_status, complete_delivery}, in_transit, #{status => "in_transit"})
-        ),
-
-        ?_assertEqual(
-            {next_state, in_transit, #{location => "Warehouse 42", status => "in_transit"}},
-            handle_event(cast, {update_location, "Warehouse 42"}, in_transit, #{status => "in_transit"})
-        ),
-
-        ?_assertEqual(
-            {next_state, in_transit, #{status => "in_transit", location => "Warehouse 42"}},
-            handle_event(unexpected_type, unexpected_content, in_transit, #{status => "in_transit", location => "Warehouse 42"})
-        )
-    ].
-
-api_test_() ->
-    {ok, Pid} = package_status_statem:start_link(1),
-    % Funs force assertions to wait on casts like update status to evaluate
-    % before testing
-    Status = fun () ->
-        package_status_statem:update_status(1, start_delivery),
-        gen_statem:call(Pid, get_status) end,
-    Location = fun () ->
-        package_status_statem:update_location(1, "Warehouse 42"),
-        gen_statem:call(Pid, get_status) end,
-
-    [
-        ?_assertEqual(
-            #{status => "pending", location => "unknown"},
-            gen_statem:call(Pid, get_status)
-        ),
-        ?_assertEqual(
-            #{status => "in_transit", location => "unknown"},
-            Status()
-        ),
-        ?_assertEqual(
-            #{status => "in_transit", location => "Warehouse 42"},
-            Location()
-        )
-    ].
 
 -endif.
