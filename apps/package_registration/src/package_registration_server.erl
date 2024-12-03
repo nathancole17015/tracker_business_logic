@@ -2,48 +2,54 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, register_package/3]).
+-export([start_link/0, register_package/1, get_package/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--define(RIAK_HOST, "localhost").
--define(RIAK_PORT, 8087).
+-define(RIAK_BUCKET, <<"test_bucket">>).
 
-%% Define the state record with a field for the Riak connection PID
--record(state, {riak_pid}).
+-record(state, {client_pid}).
 
 %% Public API
 start_link() ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, [], []).
 
-register_package(PackageId, Sender, Receiver) ->
-    gen_server:call(?MODULE, {register, PackageId, Sender, Receiver}).
+register_package(PackageId) ->
+    gen_server:call(?MODULE, {register, PackageId}).
+
+get_package(PackageId) ->
+    gen_server:call(?MODULE, {get, PackageId}).
 
 %% gen_server Callbacks
+-ifndef(TEST).
 init([]) ->
-    %% Connect to Riak when the server starts
-    case riakc_pb_socket:start_link(?RIAK_HOST, ?RIAK_PORT) of
-        {ok, RiakPid} ->
-            {ok, #state{riak_pid = RiakPid}};
-        {error, Reason} ->
-            {stop, Reason}
-    end.
-
-handle_call({register, PackageId, Sender, Receiver}, _From, #state{riak_pid = RiakPid} = State) ->
-    %% Create a new object to store in Riak
-    Bucket = <<"package_registration">>,
+    %% Start connection to Riak
+    {ok, ClientPid} = riakc_pb_socket:start_link("database.mertlymedia.net", 8087),
+    {ok, #state{client_pid = ClientPid}}.
+-endif.
+handle_call({register, PackageId}, _From, #state{client_pid = ClientPid} = State) when is_integer(PackageId) ->
     Key = integer_to_binary(PackageId),
-    Value = term_to_binary({Sender, Receiver}),
-    Obj = riakc_obj:new(Bucket, Key, Value),
-
-    %% Store the object in Riak
-    case riakc_pb_socket:put(RiakPid, Obj) of
+    Value = jsx:encode(#{locationId => <<"pending">>}),
+    Obj = riakc_obj:new(?RIAK_BUCKET, Key, Value),
+    case riakc_pb_socket:put(ClientPid, Obj) of
         ok ->
-            io:format("Package ~p registered from ~p to ~p~n", [PackageId, Sender, Receiver]),
+            log_info(io_lib:format("Package ~p registered", [PackageId])),
             {reply, {ok, PackageId}, State};
         {error, Reason} ->
-            io:format("Failed to register package: ~p~n", [Reason]),
+            log_info(io_lib:format("Failed to register package: ~p~n", [Reason])),
+            {reply, {error, Reason}, State}
+    end;
+
+handle_call({get, PackageId}, _From, #state{client_pid = ClientPid} = State) when is_integer(PackageId) ->
+    Key = integer_to_binary(PackageId),
+    case riakc_pb_socket:get(ClientPid, ?RIAK_BUCKET, Key) of
+        {ok, Obj} ->
+            Value = riakc_obj:get_value(Obj),
+            log_info(io_lib:format("Retrieved package ~p", [PackageId])),
+            {reply, {ok, Value}, State};
+        {error, Reason} ->
+            log_info(io_lib:format("Failed to retrieve package: ~p~n", [Reason])),
             {reply, {error, Reason}, State}
     end;
 
@@ -61,3 +67,87 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
+
+
+-ifndef(TEST).
+log_info(Msg) ->
+    io:format("~s~n",[Msg]).
+-endif.
+
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+
+init([]) -> {ok, #state{client_pid = self()}}.
+
+log_info(_Msg) ->
+    ok.
+
+mock_put(_Pid,_Bucket,Key) when is_integer(Key) ->
+    {ok, Key};
+mock_put(_Pid,_Bucket,_Key) ->
+    {error,not_an_ineger}.
+
+
+setup() ->
+    meck:new(riakc_pb_socket, [passthrough]),
+    meck:expect(riakc_pb_socket, start_link, fun(_Host, _Port) -> {ok, self()} end),
+    meck:expect(riakc_pb_socket, put, fun(_Pid, _Obj) -> ok end),
+    meck:expect(riakc_pb_socket, get, fun mock_put/3),
+    {ok, package_registration_server:start_link()}.
+
+teardown(_) ->
+    meck:unload(riakc_pb_socket).
+
+package_registration_tests() ->
+    {
+        setup,
+        fun setup/0,
+        fun teardown/1,
+        [
+            fun start_link_test/0,
+            fun register_package_success_test/0,
+            fun register_package_failure_test/0
+        ]
+    }.
+
+start_link_test() ->
+    {ok, Pid} = package_registration_server:start_link(),
+    is_process_alive(Pid).
+
+register_package_success_test() ->
+    PackageId = 123,
+    Result = package_registration_server:register_package(PackageId),
+    ?assertMatch({ok, PackageId}, Result).
+
+register_package_failure_test() ->
+    %% Attempt to register a package, expecting an error tuple in response
+    PackageId = something_else,
+    Result = package_registration_server:register_package(PackageId),
+    ?assertMatch({error, not_an_ineger}, Result).
+
+% get_package_success_test() ->
+%     %% Mock a successful GET request from Riak
+%     meck:expect(riakc_pb_socket, get, fun(_ClientPid, _Bucket, _Key) ->
+%         {ok, riakc_obj:new(<<"test_bucket">>, <<"123">>, <<"{\"locationId\":\"pending\"}">>)}
+%     end),
+
+%     %% Test get_package/1 with an expected JSON response
+%     PackageId = 123,
+%     Result = package_registration_server:get_package(PackageId),
+    
+%     %% Adjust ExpectedData to use map syntax with binary keys and values
+%     ExpectedData = #{<<"locationId">> => <<"pending">>},
+%     ?assertMatch({ok, ExpectedData}, Result).
+
+% get_package_failure_test() ->
+%     %% Mock a failure for GET request from Riak
+%     meck:expect(riakc_pb_socket, get, fun(_ClientPid, _Bucket, _Key) ->
+%         {error, notfound}
+%     end),
+
+%     %% Attempt to get a non-existing package, expecting an error
+%     PackageId = 789,
+%     Result = package_registration_server:get_package(PackageId),
+%     ?assertMatch({error, notfound}, Result).
+
+-endif.
