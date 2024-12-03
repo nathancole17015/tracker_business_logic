@@ -2,28 +2,22 @@
 -export([init/2]).
 
 init(Req, _Opts) ->
-    %% Read the request body
     {ok, Body, Req1} = cowboy_req:read_body(Req),
     package_registration_sup:start_link(),
-    %% Decode the JSON body to extract the package ID
     case jsx:decode(Body) of
         [{<<"packageId">>, PackageIdStr}] ->
-            %% Convert the PackageId to an integer
             case string:to_integer(PackageIdStr) of
                 {error, _} ->
-                    %% Respond with a 400 Bad Request if the PackageId is invalid
                     cowboy_req:reply(400, #{<<"content-type">> => <<"text/plain">>}, <<"Invalid Package ID">>, Req1),
                     {ok, Req1, #{}};
                 {PackageId,_} ->
-                    %% Call package_registration_server:register_package/1
                     Result = package_registration_server:register_package(PackageId),
-                    %% Format and send the response
-                    io:format("~n~n******************~n~p~n*****************~n~n",[Result]),
-                    cowboy_req:reply(200, #{<<"content-type">> => <<"application/json">>}, jsx:encode(Result), Req1),
+                    FormattedResult = io_lib:format("~n**********~nRiak Server: ~p~n**********~n",[Result]),
+                    cowboy_req:reply(200, #{<<"content-type">> => <<"text/plain">>}, FormattedResult, Req1),
                     {ok, Req1, #{}}
             end;
         Obj ->
-            %% Respond with 400 Bad Request if the body is invalid
-            cowboy_req:reply(400, #{<<"content-type">> => <<"text/plain">>}, "Invalid JSON: "++jsx:encode(Obj), Req1),
+            InvalidJsonMsg = io_lib:format("Invalid JSON: ~s", [jsx:encode(Obj)]),
+            cowboy_req:reply(400, #{<<"content-type">> => <<"text/plain">>}, InvalidJsonMsg, Req1),
             {ok, Req1, #{}}
     end.

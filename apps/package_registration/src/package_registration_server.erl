@@ -30,7 +30,8 @@ init([]) ->
 
 handle_call({register, PackageId}, _From, #state{client_pid = ClientPid} = State) ->
     Key = integer_to_binary(PackageId),
-    Obj = riakc_obj:new(?RIAK_BUCKET, Key, #{locationId => <<"pending">>}),
+    Value = jsx:encode(#{locationId => <<"pending">>}),
+    Obj = riakc_obj:new(?RIAK_BUCKET, Key, Value),
     case riakc_pb_socket:put(ClientPid, Obj) of
         ok ->
             log_info(io_lib:format("Package ~p registered", [PackageId])),
