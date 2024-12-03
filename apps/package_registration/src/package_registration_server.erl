@@ -7,9 +7,9 @@
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2, code_change/3]).
 
--define(RIAK_URL, "https://database.mertlymedia.net:443/buckets/test_bucket/keys/").
+-define(RIAK_BUCKET, <<"test_bucket">>).
 
--record(state, {}).
+-record(state, {client_pid}).
 
 %% Public API
 start_link() ->
@@ -24,48 +24,35 @@ get_package(PackageId) ->
 %% gen_server Callbacks
 
 init([]) ->
-    %% Start inets (for httpc)
-    inets:start(),
-    {ok, #state{}}.
+    %% Start connection to Riak
+    {ok, ClientPid} = riakc_pb_socket:start_link("database.mertlymedia.net", 8087),
+    {ok, #state{client_pid = ClientPid}}.
 
-handle_call({register, PackageId}, _From, State) ->
-    %% Define the URL for the specific package
-    URL = ?RIAK_URL
-        ++ integer_to_list(PackageId)
-        ++ "?returnbody=true",
-    Data = jsx:encode([{locationId, <<"pending">>}]),
-    %% Headers for JSON content
-    Headers = [{"Content-Type", "application/json"}],
-    %% Send HTTPS PUT request to store data
-    case httpc:request(put, {URL, Headers, "application/json", Data}, []) of
-        {ok, {{_, 200, _}, _, _}} ->
+handle_call({register, PackageId}, _From, #state{client_pid = ClientPid} = State) ->
+    Key = integer_to_binary(PackageId),
+    Obj = riakc_obj:new(?RIAK_BUCKET, Key, #{locationId => <<"pending">>}),
+    case riakc_pb_socket:put(ClientPid, Obj) of
+        ok ->
             log_info(io_lib:format("Package ~p registered", [PackageId])),
             {reply, {ok, PackageId}, State};
-        {ok, {{_, StatusCode, _}, _, ResponseBody}} ->
-            log_info(io_lib:format("Failed to register package, status: ~p, response: ~s~n", [StatusCode, ResponseBody])),
-            {reply, {error, {http_error, StatusCode}}, State};
         {error, Reason} ->
             log_info(io_lib:format("Failed to register package: ~p~n", [Reason])),
             {reply, {error, Reason}, State}
     end;
 
-handle_call({get, PackageId}, _Sender, State) ->
-    %% Define the URL for the specific package
-    URL = ?RIAK_URL ++ integer_to_list(PackageId),
-    %% Send HTTP GET request to retrieve data
-    case httpc:request(get, {URL, []}, [], []) of
-        {ok, {{_, 200, _}, _, Body}} ->
-            log_info(io_lib:format("Package ~p registered", [PackageId])),
-            {reply, {ok, jsx:decode(list_to_binary(Body),[return_maps])}, State};
-        {ok, {{_, StatusCode, _}, _, _}} ->
-            log_info(io_lib:format("Failed to retrieve package, status: ~p~n", [StatusCode])),
-            {reply, {error, {http_error, StatusCode}}, State};
+handle_call({get, PackageId}, _From, #state{client_pid = ClientPid} = State) ->
+    Key = integer_to_binary(PackageId),
+    case riakc_pb_socket:get(ClientPid, ?RIAK_BUCKET, Key) of
+        {ok, Obj} ->
+            Value = riakc_obj:get_value(Obj),
+            log_info(io_lib:format("Retrieved package ~p", [PackageId])),
+            {reply, {ok, Value}, State};
         {error, Reason} ->
             log_info(io_lib:format("Failed to retrieve package: ~p~n", [Reason])),
             {reply, {error, Reason}, State}
     end;
 
-handle_call(_Request, _Sender, State) ->
+handle_call(_Request, _From, State) ->
     {reply, error, State}.
 
 handle_cast(_Msg, State) ->

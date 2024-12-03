@@ -31,7 +31,15 @@ init([]) ->
         intensity => 0,
         period => 1
     },
-    ChildSpecs = [],
-    {ok, {SupFlags, ChildSpecs}}.
+    %% Define the child specs
+    Children = [
+        %% Define a child spec for package_registration_server
+        #{id => package_registration_server,
+          start => {package_registration_server, start_link, []},
+          type => worker}
+    ],
+    
+    %% Specify the supervision strategy
+    {ok, {SupFlags,Children}}.
 
 %% internal functions
