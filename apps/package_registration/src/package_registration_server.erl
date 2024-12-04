@@ -34,7 +34,6 @@ handle_call({register, PackageId}, _From, #state{client_pid = ClientPid} = State
     Obj = riakc_obj:new(?RIAK_BUCKET, Key, Value),
     case riakc_pb_socket:put(ClientPid, Obj) of
         ok ->
-            log_info(io_lib:format("Package ~p registered", [PackageId])),
             {reply, {ok, PackageId}, State};
         {error, Reason} ->
             log_info(io_lib:format("Failed to register package: ~p~n", [Reason])),
@@ -46,7 +45,6 @@ handle_call({get, PackageId}, _From, #state{client_pid = ClientPid} = State) whe
     case riakc_pb_socket:get(ClientPid, ?RIAK_BUCKET, Key) of
         {ok, Obj} ->
             Value = riakc_obj:get_value(Obj),
-            log_info(io_lib:format("Retrieved package ~p", [PackageId])),
             {reply, {ok, Value}, State};
         {error, Reason} ->
             log_info(io_lib:format("Failed to retrieve package: ~p~n", [Reason])),
