@@ -2,7 +2,6 @@
 -export([init/2]).
 
 %% Required for decoding JSON and handling HTTP requests
--include_lib("cowboy/include/cowboy.hrl").
 
 init(Req, _Opts) ->
     {ok, Body, Req1} = cowboy_req:read_body(Req),

@@ -87,11 +87,13 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%% Define log_info for both production and test environments
+log_info(Msg) ->
+    io:format("~p~n", [Msg]).
 
 -ifdef(TEST).
 -include_lib("eunit/include/eunit.hrl").
 
-log_info(_Msg) -> ok.
 
 %% Tests
 setup() ->
