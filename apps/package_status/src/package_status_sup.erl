@@ -27,10 +27,10 @@ start_link() ->
 %%                  modules => modules()}   % optional
 init([]) ->
     SupFlags = #{
-        strategy => one_for_all,
-        intensity => 0,
-        period => 1
-    },
+        strategy => one_for_one,
+        intensity => 3,
+        period => 5
+    },    
     %% Define the child specs
     Children = [
         %% Define a child spec for package_registration_server

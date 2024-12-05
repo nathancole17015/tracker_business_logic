@@ -9,12 +9,12 @@ start(_StartType, _StartArgs) ->
 
     Dispatch = cowboy_router:compile([
             {'_', [
-                {"/register", package_registration_handler, []}
+                {"/status", package_status_handler_get, []}
             ]}
         ]),
     ParentPrivDir = lists:foldr(
         fun (_,Dir) -> filename:dirname(Dir) end,
-        code:priv_dir(package_registration),
+        code:priv_dir(package_status),
         lists:seq(1,5)
     ),
 
