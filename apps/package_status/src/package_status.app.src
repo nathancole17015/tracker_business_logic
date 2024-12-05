@@ -6,10 +6,15 @@
     {applications, [
         kernel,
         stdlib,
-        cowboy
+        cowboy %% Ensure cowboy starts automatically
     ]},
     {env, []},
-    {modules, []},
+    {modules, [
+        package_status_app,
+        package_status_sup,
+        package_status_server,
+        package_status_handler_get
+    ]},
     {licenses, ["Apache-2.0"]},
     {links, []}
- ]}.
+]}.

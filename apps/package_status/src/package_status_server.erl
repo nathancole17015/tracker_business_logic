@@ -98,23 +98,31 @@ log_info(Msg) ->
 %% Tests
 setup() ->
     meck:new(httpc, [passthrough]),
+    meck:set_expect_timeout(5000), 
     {ok, _} = package_status_server:start_link(), % Ensure server is started
     ok.
 
 teardown(_) ->
-    gen_server:stop(package_status_server).
+    gen_server:stop(package_status_server),
+    meck:unload(httpc),
+    ok.
 
-update_package_status_test() ->
-    %% Mock a successful HTTP PUT request
-    meck:expect(httpc, request, fun(_Method, {_URL, _Headers, _Type, _Data}, _Options, _Opts) -> 
-        {ok, {{http, 200, "OK"}, [], "Status updated"}}
-    end),
-
-    %% Test updating the package status
-    PackageId = 123,
-    Status = <<"shipped">>,
-    Result = package_status_server:update_package_status(PackageId, Status),
-    ?assertMatch({ok, PackageId}, Result).
+    update_package_status_test_() ->
+        {setup,
+         fun setup/0,
+         fun teardown/1,
+         fun() ->
+             %% Mock a successful HTTP PUT request
+             meck:expect(httpc, request, fun(_Method, {_URL, _Headers, _Type, _Data}, _Options, _Opts) -> 
+                 {ok, {{http, 200, "OK"}, [], "Status updated"}}
+             end),
+    
+             %% Test updating the package status
+             PackageId = 123,
+             Status = <<"shipped">>,
+             Result = package_status_server:update_package_status(PackageId, Status),
+             ?assertMatch({ok, PackageId}, Result)
+         end}.
 
 get_package_test() ->
     %% Mock a successful HTTP GET request
