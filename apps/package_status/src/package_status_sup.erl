@@ -1,5 +1,5 @@
 %%%-------------------------------------------------------------------
-%% @doc package_status top level supervisor.
+%% @doc package_registration top level supervisor.
 %% @end
 %%%-------------------------------------------------------------------
 
@@ -27,11 +27,19 @@ start_link() ->
 %%                  modules => modules()}   % optional
 init([]) ->
     SupFlags = #{
-        strategy => one_for_all,
-        intensity => 0,
-        period => 1
-    },
-    ChildSpecs = [],
-    {ok, {SupFlags, ChildSpecs}}.
+        strategy => one_for_one,
+        intensity => 3,
+        period => 5
+    },    
+    %% Define the child specs
+    Children = [
+        %% Define a child spec for package_registration_server
+        #{id => package_status_server,
+          start => {package_status_server, start_link, []},
+          type => worker}
+    ],
+    
+    %% Specify the supervision strategy
+    {ok, {SupFlags,Children}}.
 
 %% internal functions
